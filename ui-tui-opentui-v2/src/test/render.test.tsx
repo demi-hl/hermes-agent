@@ -103,4 +103,26 @@ describe('App render (Phase 1, themed)', () => {
     expect(frame).toContain('Deny')
     expect(frame).not.toContain('Type your message') // composer is hidden while blocked
   })
+
+  test('the pager overlay renders title + content and replaces the transcript/composer', async () => {
+    const store = createSessionStore()
+    store.apply({ type: 'gateway.ready' })
+    store.pushUser('a previous message')
+    store.openPager('Status', 'status line one\nstatus line two\nstatus line three')
+
+    const frame = await captureFrame(
+      () => (
+        <ThemeProvider theme={() => store.state.theme}>
+          <App store={store} />
+        </ThemeProvider>
+      ),
+      { until: 'Status', width: 72, height: 18 }
+    )
+
+    expect(frame).toContain('Status') // pager title
+    expect(frame).toContain('status line one') // paged content
+    expect(frame).toContain('Esc/q close') // pager footer hint
+    expect(frame).not.toContain('a previous message') // transcript replaced by the pager
+    expect(frame).not.toContain('Type your message') // composer hidden while the pager is open
+  })
 })

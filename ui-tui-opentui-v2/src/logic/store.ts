@@ -58,12 +58,20 @@ export type ActivePrompt =
   // local (non-gateway) Y/N confirm — e.g. /clear, /new (spec §2a)
   | { kind: 'confirm'; message: string; onConfirm: () => void }
 
+/** A full-screen scrollable text viewer (long slash output: /status, /logs, …). */
+export interface PagerState {
+  title: string
+  text: string
+}
+
 export interface StoreState {
   ready: boolean
   messages: Message[]
   theme: Theme
   /** The active blocking prompt (composer is hidden while set); undefined when none. */
   prompt: ActivePrompt | undefined
+  /** The open pager overlay (replaces the transcript while set); undefined when none. */
+  pager: PagerState | undefined
 }
 
 const LRU_LIMIT = 1000
@@ -79,7 +87,8 @@ export function createSessionStore() {
     ready: false,
     messages: [],
     theme: DEFAULT_THEME,
-    prompt: undefined
+    prompt: undefined,
+    pager: undefined
   })
 
   // Monotonic part id (stable `key` per part so a new tool part below a streaming
@@ -171,6 +180,16 @@ export function createSessionStore() {
   /** Open a local Y/N confirm dialog (non-gateway; e.g. /clear). */
   function setConfirm(message: string, onConfirm: () => void) {
     setState('prompt', { kind: 'confirm', message, onConfirm })
+  }
+
+  /** Open the pager overlay (long slash output: /status, /logs, …). */
+  function openPager(title: string, text: string) {
+    setState('pager', { title, text })
+  }
+
+  /** Close the pager overlay. */
+  function closePager() {
+    setState('pager', undefined)
   }
 
   /** Reduce a decoded gateway event into the store. The sole boundary->Solid sink. */
@@ -335,6 +354,8 @@ export function createSessionStore() {
     pushSystem,
     clearTranscript,
     setConfirm,
+    openPager,
+    closePager,
     hydrate,
     beginBuffer,
     commitSnapshot,

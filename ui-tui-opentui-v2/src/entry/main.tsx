@@ -158,8 +158,9 @@ export const run = Effect.fn('Tui.run')(function* (input: TuiInput) {
         confirm: (message, onConfirm) => store.setConfirm(message, onConfirm),
         logTail: () =>
           getLog()
-            .tail(40)
+            .tail(200)
             .map(e => `${e.scope}: ${e.msg}`),
+        openPager: (title, text) => store.openPager(title, text),
         pushSystem: text => store.pushSystem(text),
         quit: () => {
           if (!renderer.isDestroyed) renderer.destroy()

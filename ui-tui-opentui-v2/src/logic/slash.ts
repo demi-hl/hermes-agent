@@ -32,6 +32,8 @@ export interface SlashContext {
   readonly request: (method: string, params: Record<string, unknown>) => Promise<unknown>
   readonly sessionId: () => string | undefined
   readonly pushSystem: (text: string) => void
+  /** Open the full-screen pager (long output: /status, /logs, …). */
+  readonly openPager: (title: string, text: string) => void
   /** Submit a user turn (skill/send dispatch results). */
   readonly submit: (text: string) => void
   /** Open a local Y/N confirm; `onConfirm` runs on Yes. */
@@ -46,6 +48,15 @@ function readStr(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined
   const v = (value as { [k: string]: unknown })[key]
   return typeof v === 'string' ? v : undefined
+}
+
+const titleCase = (name: string) => name.charAt(0).toUpperCase() + name.slice(1)
+
+/** Long output → the pager; short → a system line (Ink: >180 chars or >2 lines). */
+function present(ctx: SlashContext, title: string, text: string): void {
+  const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
+  if (long) ctx.openPager(title, text)
+  else ctx.pushSystem(text)
 }
 
 const CLIENT_HELP = [
@@ -71,7 +82,7 @@ const CLIENT: Record<string, ClientHandler> = {
       ctx.pushSystem(CLIENT_HELP)
     }
   },
-  logs: (_arg, ctx) => ctx.pushSystem(ctx.logTail().slice(-40).join('\n') || '(log empty)'),
+  logs: (_arg, ctx) => ctx.openPager('Logs', ctx.logTail().join('\n') || '(log empty)'),
   new: (_arg, ctx) => ctx.confirm('Start fresh? (clears the transcript)', ctx.clearTranscript),
   quit: (_arg, ctx) => ctx.quit()
 }
@@ -142,7 +153,9 @@ export async function dispatchSlash(input: string, ctx: SlashContext): Promise<v
     const result = await ctx.request('slash.exec', { command: input.slice(1), session_id: sid })
     const output = readStr(result, 'output') || `/${parsed.name}: no output`
     const warning = readStr(result, 'warning')
-    ctx.pushSystem(warning ? `warning: ${warning}\n${output}` : output)
+    const text = warning ? `warning: ${warning}\n${output}` : output
+    // Long output → pager (Ink: >180 chars or >2 non-empty lines), else a system line.
+    present(ctx, titleCase(parsed.name), text)
   } catch {
     try {
       const raw = await ctx.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
