@@ -19,7 +19,9 @@
  * it's rebuilt only when the skin changes (a new `Theme` object).
  */
 import { RGBA, SyntaxStyle } from '@opentui/core'
+import { createMemo } from 'solid-js'
 
+import { preprocessMath } from '../logic/mathPreprocess.ts'
 import type { Theme } from '../logic/theme.ts'
 import { useTheme } from './theme.tsx'
 
@@ -92,6 +94,12 @@ export function syntaxStyleFor(theme: Theme): SyntaxStyle {
 
 export function Markdown(props: { text: string; streaming?: boolean; fg?: string }) {
   const theme = useTheme()
+  // Tier-A LaTeX: convert `$…$` / `$$…$$` / `\(...\)` / `\[...\]` spans to
+  // unicode BEFORE the native parser sees the text (fences and inline code pass
+  // through untouched; unclosed delimiters stay verbatim mid-stream — see
+  // logic/mathPreprocess.ts). Memoized so it recomputes only when the text
+  // delta arrives, and the no-math fast path returns the same string identity.
+  const content = createMemo(() => preprocessMath(props.text, { streaming: props.streaming }))
   // `internalBlockMode="top-level"` is the anti-flicker mode (stable head blocks
   // aren't re-rendered per delta); `tableOptions` gives native GFM tables with
   // inline formatting; `fg` overrides the base text color (muted for reasoning).
@@ -99,7 +107,7 @@ export function Markdown(props: { text: string; streaming?: boolean; fg?: string
   // copies the RENDERED text (markers gone) via native selection, by design.
   return (
     <markdown
-      content={props.text}
+      content={content()}
       syntaxStyle={syntaxStyleFor(theme())}
       streaming={props.streaming ?? false}
       internalBlockMode="top-level"
