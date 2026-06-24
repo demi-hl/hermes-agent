@@ -46,3 +46,27 @@ describe('flashPetActivity', () => {
     setPetActivity({})
   })
 })
+
+describe('$petState anyWorking floor', () => {
+  it('runs when any gateway session is working, even with no focused-chat busy', () => {
+    // The pet used to sit idle through work driven outside the focused desktop
+    // chat (TUI pane, background session). The coarse session.active_list poll
+    // sets anyWorking, which must lift the pet to `run`.
+    $petActivity.set({ anyWorking: true })
+    expect($petState.get()).toBe('run')
+
+    $petActivity.set({ anyWorking: false })
+    expect($petState.get()).toBe('idle')
+
+    $petActivity.set({})
+  })
+
+  it('lets the focused chat fine-grained pose win over the coarse floor', () => {
+    // While anyWorking is up, the focused chat reasoning flag should still
+    // promote the pet to `review` rather than staying on the coarse `run`.
+    $petActivity.set({ anyWorking: true, reasoning: true })
+    expect($petState.get()).toBe('review')
+
+    $petActivity.set({})
+  })
+})

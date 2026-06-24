@@ -40,6 +40,11 @@ export interface PetActivity {
   error?: boolean
   justCompleted?: boolean
   celebrate?: boolean
+  // Coarse "some live gateway session is working" floor, polled from
+  // session.active_list. Lets the pet react to ANY working session (e.g. a turn
+  // driven from the TUI pane or a background session) rather than only the
+  // focused desktop chat whose stream sets the fine-grained run/reason flags.
+  anyWorking?: boolean
 }
 
 /**
@@ -182,7 +187,11 @@ export const setPetInfo = (info: PetInfo) => {
 export const $petState = computed(
   [$petActivity, $busy],
   (activity, busy): PetState => {
-    const live = activity.busy ?? busy
+    // Busy floor: the focused chat's $busy, OR an explicit per-session busy, OR
+    // the coarse "any gateway session is working" poll. The last makes the pet
+    // animate for work driven outside the focused desktop chat (TUI pane,
+    // background sessions) instead of sitting idle through it.
+    const live = activity.busy ?? (busy || Boolean(activity.anyWorking))
 
     return derivePetState({
       busy: live,

@@ -891,6 +891,45 @@ export function DesktopController() {
     return $attentionSessionIds.listen(sync)
   }, [])
 
+  // Coarse activity floor: poll session.active_list and light the pet whenever
+  // ANY live session is "working", not just the focused desktop chat. The chat
+  // stream still sets the fine-grained run/reason/celebrate flags for the
+  // focused session (those layer on top); this is what makes the pet animate
+  // for work driven from the TUI pane or a background session — the gap where
+  // it used to sit idle through a whole turn. Rides $petActivity so the pop-out
+  // overlay mirrors it for free.
+  useEffect(() => {
+    if (gatewayState !== 'open') {
+      setPetActivity({ anyWorking: false })
+
+      return
+    }
+
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const res = await requestGateway<{ sessions?: Array<{ status?: string }> }>('session.active_list', {})
+        const anyWorking = Boolean(res?.sessions?.some(s => s?.status === 'working'))
+
+        if (!cancelled) {
+          setPetActivity({ anyWorking })
+        }
+      } catch {
+        // cosmetic — never surface gateway errors to the pet
+      }
+    }
+
+    void poll()
+    const timer = window.setInterval(() => void poll(), 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      setPetActivity({ anyWorking: false })
+    }
+  }, [gatewayState, requestGateway])
+
   useGatewayBoot({
     handleGatewayEvent: handleDesktopGatewayEvent,
     onConnectionReady: c => {
