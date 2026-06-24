@@ -68,7 +68,13 @@ function loadPosition(): Point {
  * Promotion to a separate frameless OS-level window is a follow-up — the
  * sprite + state logic here is reused as-is, only the host changes.
  */
+// Fast cadence while no pet is active so an in-app `/pet <slug>` pops in within
+// a few seconds. Slow cadence once a pet is live — just enough to pick up live
+// config changes (scale slider, `/pet scale`, slug switch) without a reload.
+// `setPetInfo` dedupes by signature, so a steady-state poll is a no-op (no
+// re-decode, no canvas reset) until something actually changes.
 const PET_POLL_MS = 3000
+const PET_POLL_ACTIVE_MS = 8000
 
 export function FloatingPet() {
   const { requestGateway } = useGatewayRequest()
@@ -93,11 +99,13 @@ export function FloatingPet() {
   // state is only committed on release.
   const dragRef = useRef<{ dx: number; dy: number; x: number; y: number } | null>(null)
 
-  // Fetch pet.info on connect, then keep polling while no pet is active so an
-  // in-app `/pet <slug>` shows up live. Stops polling once a pet is enabled.
+  // Fetch pet.info on connect and keep polling. While no pet is active the poll
+  // runs fast (pop in a freshly-adopted pet); once active it drops to a slow
+  // cadence purely to pick up live config edits (scale, slug). Never stops, so
+  // `hermes pets scale` / the Appearance slider apply without an app reload.
   const active = info.enabled && Boolean(info.spritesheetBase64)
   useEffect(() => {
-    if (gatewayState !== 'open' || active) {
+    if (gatewayState !== 'open') {
       return
     }
 
@@ -116,7 +124,7 @@ export function FloatingPet() {
     }
 
     void pull()
-    const timer = window.setInterval(() => void pull(), PET_POLL_MS)
+    const timer = window.setInterval(() => void pull(), active ? PET_POLL_ACTIVE_MS : PET_POLL_MS)
 
     return () => {
       cancelled = true

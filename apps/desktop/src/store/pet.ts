@@ -129,7 +129,46 @@ export const flashPetActivity = (next: Partial<PetActivity>, ms = 1600) => {
   )
 }
 
-export const setPetInfo = (info: PetInfo) => $petInfo.set(info)
+/**
+ * Cheap content signature for a `PetInfo`. The spritesheet base64 is large, so
+ * we fingerprint it by length rather than value — a different sprite always has
+ * a different byte count (and the slug changes too), which is enough to detect
+ * a swap without diffing tens of KB on every poll.
+ */
+function petInfoSig(info: PetInfo): string {
+  return [
+    info.enabled ? '1' : '0',
+    info.slug ?? '',
+    info.scale ?? '',
+    info.mime ?? '',
+    info.frameW ?? '',
+    info.frameH ?? '',
+    info.framesPerState ?? '',
+    info.loopMs ?? '',
+    (info.stateRows ?? []).join(','),
+    JSON.stringify(info.framesByState ?? {}),
+    info.spritesheetBase64?.length ?? 0
+  ].join('|')
+}
+
+let petInfoSigCache = petInfoSig($petInfo.get())
+
+/**
+ * Set the pet info, but skip the write when nothing meaningful changed. The
+ * floating pet polls `pet.info` on an interval to pick up live config edits
+ * (scale, slug); without this guard each steady-state poll would publish a new
+ * object reference, breaking `PetSprite`'s memo and resetting the canvas (a
+ * visible animation hitch) plus pushing a redundant frame to the pop-out
+ * overlay. Dedupe by content signature so only real changes propagate.
+ */
+export const setPetInfo = (info: PetInfo) => {
+  const sig = petInfoSig(info)
+  if (sig === petInfoSigCache) {
+    return
+  }
+  petInfoSigCache = sig
+  $petInfo.set(info)
+}
 
 /**
  * The live pet state. Derives from the dedicated activity atom, falling back to
