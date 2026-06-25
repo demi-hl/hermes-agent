@@ -13,8 +13,8 @@ Per-state motion (Codex 9-row taxonomy rows in parens):
   idle(0)    breathe + lazy flame flicker
   waving(3)  lean side-to-side + big flame sway + hop
   jumping(4) crouch -> launch tall -> APEX breathes FIRE -> land squash (celebrate)
-  failed(5)  body slumps/flattens + flame shrinks to a sad ember
-  waiting(6) small low flame, bored foot tap, low energy
+  failed(5)  body slumps + flame shrinks to a dying ember + grey smoke rises
+  waiting(6) small low flame, bored foot tap, anime sweat-bead/'!' pop
   running(7) feet pump + bob + flame leans back (motion trail)
   review(8)  flame shrinks small + slow pulse (pondering)
 
@@ -57,6 +57,8 @@ FLAME_PIVOT = (104, 80)
 LFOOT_BOX = (16, 120, 44, None)    # y1 filled from TH
 RFOOT_BOX = (66, 120, 92, None)
 MOUTH = (66, 54)                   # fire-breath emit point; jet shoots +x (right)
+FLAME_TIP = (110, 40)              # smoke rises from here (top of tail flame)
+HEAD = (58, 30)                    # sweat-bead / '!' anchor (top of head)
 
 
 def _backup_path(src: Path) -> Path:
@@ -114,11 +116,59 @@ class Rig:
         f = self._rot(self.flame, FLAME_PIVOT, deg)
         if abs(grow - 1.0) < 0.01:
             return f
+        if grow < 1.0:
+            # shrink toward the flame BASE so it dwindles in place (ember),
+            # not toward the canvas origin.
+            fb = f.getbbox()
+            if not fb:
+                return Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
+            sub = f.crop(fb)
+            nw, nh = max(1, round(sub.width*grow)), max(1, round(sub.height*grow))
+            sm = sub.resize((nw, nh), _LANCZOS)
+            out = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
+            base_cx = (fb[0]+fb[2])//2; base_y = fb[3]
+            out.alpha_composite(sm, (base_cx - nw//2, base_y - nh))
+            return out
         px, py = FLAME_PIVOT
         big = f.resize((max(1, round(self.TW*grow)), max(1, round(self.TH*grow))), _LANCZOS)
         out = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
         out.alpha_composite(big, (round(px - px*grow), round(py - py*grow)))
         return out
+
+    def _smoke(self, scale, seed):
+        """Grey wisps rising from the dying tail flame (failed state)."""
+        layer = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
+        if scale <= 0.02:
+            return layer
+        d = ImageDraw.Draw(layer); rng = random.Random(seed)
+        fx, fy = FLAME_TIP
+        for i in range(int(4*scale) + 1):
+            rise = int(18 * scale * (i/4 + 0.3))
+            cx = fx + int(6*math.sin(i*1.3 + seed)) + rng.randint(-2, 2)
+            cy = fy - rise + rng.randint(-2, 2)
+            r = int(3 + 3*scale + i)
+            alpha = max(0, int(150 * (1 - i/5)))
+            g = rng.randint(120, 170)
+            d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=(g, g, g, alpha))
+        return layer.filter(ImageFilter.GaussianBlur(1.1))
+
+    def _sweat(self, scale, seed):
+        """Pale-blue anime sweat bead + a '!' pop near the head (waiting)."""
+        layer = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
+        if scale <= 0.02:
+            return layer
+        d = ImageDraw.Draw(layer)
+        hx, hy = HEAD
+        drip = int(6 * scale)
+        bx, by = hx + 18, hy + 2 + drip
+        r = int(3 + 2*scale)
+        d.ellipse([bx-r, by-r+2, bx+r, by+r+2], fill=(150, 210, 255, 235))
+        d.polygon([(bx, by-r-2), (bx-r+1, by-1), (bx+r-1, by-1)], fill=(150, 210, 255, 235))
+        if scale > 0.5:
+            ex, ey = hx + 22, hy - 10
+            d.rectangle([ex-1, ey, ex+1, ey+8], fill=(255, 230, 60, 255))
+            d.ellipse([ex-1, ey+10, ex+1, ey+12], fill=(255, 230, 60, 255))
+        return layer
 
     def _lift_foot(self, box, dy):
         out = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
@@ -174,7 +224,8 @@ class Rig:
         return layer.filter(ImageFilter.GaussianBlur(0.35))
 
     def frame(self, bb, *, bob=0.0, flame_deg=0.0, flame_grow=1.0, lean=0.0,
-              foot_l=0, foot_r=0, sx=1.0, sy=1.0, lift_all=0, fire=0.0, fire_seed=0):
+              foot_l=0, foot_r=0, sx=1.0, sy=1.0, lift_all=0, fire=0.0, fire_seed=0,
+              smoke=0.0, sweat=0.0, overlay_seed=0):
         b = int(round(bob))
         cur = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
         cur.alpha_composite(self.body_nofeet, (0, -b))
@@ -183,6 +234,10 @@ class Rig:
         cur.alpha_composite(self._lift_foot(self.RFOOT, foot_r), (0, -b))
         if fire > 0:
             cur.alpha_composite(self._fire_puff(fire, fire_seed), (0, -b))
+        if smoke > 0:
+            cur.alpha_composite(self._smoke(smoke, overlay_seed), (0, -b))
+        if sweat > 0:
+            cur.alpha_composite(self._sweat(sweat, overlay_seed), (0, -b))
         if lean:
             cur = self._rot(cur, (self.TW//2, self.TH-4), lean)
         cur = self._squash(cur, sx, sy)
@@ -222,13 +277,19 @@ def gen_state(rig: Rig, bb, state: str):
             out.append(rig.frame(bb, lift_all=lift_all, sx=sx, sy=sy,
                                   flame_grow=grow, fire=fire, fire_seed=i))
         elif state == "waiting":
-            # low bored energy: small flame, periodic foot tap + flame dip
+            # low bored energy: small flame, periodic foot tap + flame dip,
+            # plus an anime sweat-bead/'!' that pops (blocked on the user).
             tap = 7 if (i % 3 == 0) else 0
-            out.append(rig.frame(bb, bob=0.8*abs(_s(t)), flame_deg=6*_s(t*2), flame_grow=0.55+0.08*_s(t), foot_r=tap))
+            sweat = max(0.0, math.sin(math.pi * t))   # 0 -> peak mid-loop -> 0
+            out.append(rig.frame(bb, bob=0.8*abs(_s(t)), flame_deg=6*_s(t*2),
+                                 flame_grow=0.55+0.08*_s(t), foot_r=tap,
+                                 sweat=sweat, overlay_seed=i))
         elif state == "failed":
+            # slump + flame shrinks to a dying ember + grey smoke rises.
             k = i/(n-1)
             out.append(rig.frame(bb, sx=1.0+0.10*k, sy=1.0-0.16*k,
-                                 flame_grow=max(0.22, 1-0.75*k), flame_deg=5*k))
+                                 flame_grow=max(0.22, 1-0.75*k), flame_deg=5*k,
+                                 smoke=k, overlay_seed=i))
     return out
 
 
