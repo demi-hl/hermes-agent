@@ -12,7 +12,7 @@ squash/stretch is reserved for the jump beat only.
 Per-state motion (Codex 9-row taxonomy rows in parens):
   idle(0)    breathe + lazy flame flicker
   waving(3)  lean side-to-side + big flame sway + hop
-  jumping(4) crouch -> launch tall -> peak -> land squash, flame roars
+  jumping(4) crouch -> launch tall -> APEX breathes FIRE -> land squash (celebrate)
   failed(5)  body slumps/flattens + flame shrinks to a sad ember
   waiting(6) small low flame, bored foot tap, low energy
   running(7) feet pump + bob + flame leans back (motion trail)
@@ -27,10 +27,11 @@ animate_pet_motion.py for non-Charmander sheets.
 from __future__ import annotations
 import argparse
 import math
+import random
 import shutil
 import sys
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 import numpy as np
 
 try:
@@ -55,6 +56,7 @@ FLAME_BOX = (98, 28, None, 82)     # x1 filled from TW at runtime
 FLAME_PIVOT = (104, 80)
 LFOOT_BOX = (16, 120, 44, None)    # y1 filled from TH
 RFOOT_BOX = (66, 120, 92, None)
+MOUTH = (66, 54)                   # fire-breath emit point; jet shoots +x (right)
 
 
 def _backup_path(src: Path) -> Path:
@@ -133,14 +135,54 @@ class Rig:
         out.alpha_composite(r, (round((self.TW-nw)/2), self.TH-nh))  # bottom-anchored
         return out
 
+    def _fire_puff(self, scale, seed):
+        """Procedural directional flame JET from the mouth shooting right
+        (scale 0..1). Teardrop silhouette, fat red/orange/yellow bands with a
+        small white-hot root + flickering tip flecks. Returns a TWxTH layer."""
+        layer = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
+        if scale <= 0.02:
+            return layer
+        d = ImageDraw.Draw(layer)
+        mx, my = MOUTH
+        rng = random.Random(seed)
+        reach = int(40 * scale)
+        maxh = 7 + 9 * scale
+
+        def jet(length, thick):
+            top, bot = [], []
+            steps = max(6, length // 2)
+            for s in range(steps + 1):
+                t = s / steps
+                x = mx + 3 + int(length * t)
+                prof = (math.sin(min(1, t / 0.32) * math.pi / 2) if t < 0.32
+                        else (1 - (t - 0.32) / 0.68) ** 0.8)
+                h = max(0.5, thick * prof)
+                cy = my - int(2 * t) + rng.uniform(-1, 1) * scale
+                top.append((x, cy - h)); bot.append((x, cy + h))
+            return top + bot[::-1]
+
+        d.polygon(jet(reach,            maxh * 1.15), fill=(210, 30, 8, 215))
+        d.polygon(jet(int(reach*0.86), maxh * 0.82), fill=(255, 120, 18, 235))
+        d.polygon(jet(int(reach*0.66), maxh * 0.52), fill=(255, 200, 60, 245))
+        cr = int(2 + 3 * scale)
+        d.ellipse([mx-cr, my-cr, mx+cr, my+cr], fill=(255, 248, 220, 255))
+        tipx = mx + 3 + reach
+        for _ in range(int(3 * scale)):
+            fx = tipx + rng.randint(-2, 4); fy = my - 2 + rng.randint(-3, 2)
+            r = rng.randint(1, 2)
+            d.ellipse([fx-r, fy-r, fx+r, fy+r], fill=(255, 150, 30, 200))
+        return layer.filter(ImageFilter.GaussianBlur(0.35))
+
     def frame(self, bb, *, bob=0.0, flame_deg=0.0, flame_grow=1.0, lean=0.0,
-              foot_l=0, foot_r=0, sx=1.0, sy=1.0, lift_all=0):
+              foot_l=0, foot_r=0, sx=1.0, sy=1.0, lift_all=0, fire=0.0, fire_seed=0):
         b = int(round(bob))
         cur = Image.new("RGBA", (self.TW, self.TH), (0, 0, 0, 0))
         cur.alpha_composite(self.body_nofeet, (0, -b))
         cur.alpha_composite(self._scale_flame(flame_deg, flame_grow), (0, -b))
         cur.alpha_composite(self._lift_foot(self.LFOOT, foot_l), (0, -b))
         cur.alpha_composite(self._lift_foot(self.RFOOT, foot_r), (0, -b))
+        if fire > 0:
+            cur.alpha_composite(self._fire_puff(fire, fire_seed), (0, -b))
         if lean:
             cur = self._rot(cur, (self.TW//2, self.TH-4), lean)
         cur = self._squash(cur, sx, sy)
@@ -168,10 +210,17 @@ def gen_state(rig: Rig, bb, state: str):
         elif state == "waving":
             out.append(rig.frame(bb, bob=4*abs(_s(t)), flame_deg=18*_s(t), lean=7*_s(t)))
         elif state == "jumping":
-            seq = [(0, 1.06, 0.9, 1.0), (14, 0.95, 1.12, 1.3), (26, 0.98, 1.05, 1.5),
-                   (10, 1.0, 1.02, 1.25), (0, 1.08, 0.86, 0.95), (0, 1.02, 0.97, 1.0)]
-            lift_all, sx, sy, grow = seq[i % len(seq)]
-            out.append(rig.frame(bb, lift_all=lift_all, sx=sx, sy=sy, flame_grow=grow))
+            # celebrate: crouch -> launch tall -> APEX (breathe fire) -> land squash.
+            # (lift_all, sx, sy, flame_grow, fire) — fire breathes at the apex.
+            seq = [(0,  1.06, 0.90, 1.0, 0.0),   # crouch
+                   (16, 0.95, 1.12, 1.3, 0.0),   # launch tall
+                   (28, 0.98, 1.05, 1.5, 0.5),   # apex — fire ignites
+                   (24, 1.0,  1.02, 1.4, 1.0),   # apex hold — fire peak
+                   (6,  1.06, 0.90, 1.1, 0.35),  # falling, fire trails
+                   (0,  1.04, 0.96, 1.0, 0.0)]   # land squash
+            lift_all, sx, sy, grow, fire = seq[i % len(seq)]
+            out.append(rig.frame(bb, lift_all=lift_all, sx=sx, sy=sy,
+                                  flame_grow=grow, fire=fire, fire_seed=i))
         elif state == "waiting":
             # low bored energy: small flame, periodic foot tap + flame dip
             tap = 7 if (i % 3 == 0) else 0
