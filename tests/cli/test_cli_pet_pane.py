@@ -134,3 +134,28 @@ def test_pet_resolve_config_enables_and_disables(boba_like):
     cli_obj._pet_resolve_config()
     assert cli_obj._pet_enabled is False
     assert cli_obj._pet_renderer is None
+
+
+def test_pet_render_mode_off_disables_cli_pane(boba_like):
+    # render_mode 'off' is the terminal-render kill switch for a GUI-only pet.
+    # The base CLI is a terminal surface, so an enabled pet with render_mode off
+    # must NOT draw here even though it stays live on the desktop canvas.
+    from hermes_cli.config import load_config, save_config
+
+    cli_obj = _make_cli()
+
+    cfg = load_config()
+    cfg.setdefault("display", {}).setdefault("pet", {})
+    cfg["display"]["pet"].update({"enabled": True, "slug": "boba", "render_mode": "off"})
+    save_config(cfg)
+
+    cli_obj._pet_resolve_config()
+    assert cli_obj._pet_enabled is False
+    assert cli_obj._pet_renderer is None
+
+    # Flipping render_mode back to auto re-enables the pane without a restart.
+    cfg["display"]["pet"]["render_mode"] = "auto"
+    save_config(cfg)
+    cli_obj._pet_resolve_config()
+    assert cli_obj._pet_enabled is True
+    assert cli_obj._pet_renderer is not None

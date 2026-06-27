@@ -4470,11 +4470,15 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             pet_cfg = display.get("pet", {}) if isinstance(display.get("pet"), dict) else {}
 
             enabled = bool(pet_cfg.get("enabled"))
+            # render_mode 'off' is the terminal-render kill switch (GUI-only pet).
+            # The CLI is a terminal surface, so honor it here the same way the
+            # gateway's pet.cells RPC does — without it the CLI keeps drawing.
+            render_mode = str(pet_cfg.get("render_mode", "auto") or "auto").strip().lower()
             slug = str(pet_cfg.get("slug", "") or "")
             scale = float(pet_cfg.get("scale", constants.DEFAULT_SCALE) or constants.DEFAULT_SCALE)
             cols = constants.resolve_cols(scale, pet_cfg.get("unicode_cols", 0))
 
-            if not enabled:
+            if not enabled or render_mode == "off":
                 with self._pet_lock:
                     self._pet_enabled = False
                     self._pet_renderer = None
