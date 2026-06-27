@@ -270,6 +270,14 @@ def _is_base64_data_uri(value: str) -> bool:
     return prefix.startswith("data:") and ";base64," in prefix
 
 
+# Matches a base64 data URI anywhere in a string, not just at the start. The
+# SDK's media scanner finds embedded data URIs (e.g. inside a tool-result JSON
+# string or a multimodal content blob), so a string that merely *contains* one
+# must be scrubbed too — otherwise _truncate_text slices the payload mid-base64
+# and the SDK's b64decode throws "Incorrect padding" on every LLM call.
+_EMBEDDED_DATA_URI_RE = re.compile(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+")
+
+
 def _redact_data_uri(value: str) -> dict[str, Any]:
     header = value.split(",", 1)[0] if "," in value else "data:"
     media_type = header[5:].split(";", 1)[0] if header.startswith("data:") else ""
@@ -281,14 +289,26 @@ def _redact_data_uri(value: str) -> dict[str, Any]:
     }
 
 
+def _strip_embedded_data_uris(value: str) -> str:
+    def _repl(match: "re.Match[str]") -> str:
+        uri = match.group(0)
+        media_type = uri[5:].split(";", 1)[0]
+        return f"[data_uri omitted media_type={media_type or 'unknown'} length={len(uri)}]"
+
+    return _EMBEDDED_DATA_URI_RE.sub(_repl, value)
+
+
 def _truncate_text(value: str, max_chars: int) -> Any:
     # Langfuse SDK treats data:*;base64 strings as media and attempts to
     # decode them. Truncating those strings produces invalid base64 and noisy
     # "Error parsing base64 data URI" logs. Observability only needs metadata,
-    # not raw image/audio payloads, so redact the whole data URI before it
-    # reaches the SDK.
+    # not raw image/audio payloads, so redact the data URI before it reaches
+    # the SDK — whole-string redaction when the value *is* a data URI, and
+    # substring scrubbing when one is merely embedded in a larger string.
     if _is_base64_data_uri(value):
         return _redact_data_uri(value)
+    if "base64," in value:
+        value = _strip_embedded_data_uris(value)
     if len(value) <= max_chars:
         return value
     return value[:max_chars] + f"... [truncated {len(value) - max_chars} chars]"

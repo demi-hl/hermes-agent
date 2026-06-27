@@ -1016,13 +1016,17 @@ export function ChatBar({
       return
     }
 
-    // Cmd/Ctrl+Shift+K drains the next queued message. Plain Cmd/Ctrl+K is
-    // reserved for the global command palette.
+    // Cmd/Ctrl+Shift+K sends the next queued message now. Plain Cmd/Ctrl+K is
+    // reserved for the global command palette. Routed through sendQueuedNow (not
+    // the idle-only drainNextQueued) so it also works while busy — the queue's
+    // primary state — by promoting the head and interrupting the live turn.
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'k') {
       event.preventDefault()
 
-      if (!busy) {
-        void drainNextQueued()
+      const head = pickDrainHead(queuedPrompts)
+
+      if (head) {
+        void sendQueuedNow(head.id)
       }
 
       return

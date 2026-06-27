@@ -204,6 +204,28 @@ class TestPayloadSanitization:
             "length": len(payload),
         }
 
+    def test_truncate_text_strips_embedded_data_uri_so_sdk_cannot_misdecode(self):
+        # The SDK's media scanner decodes any data:*;base64 substring it finds.
+        # A data URI embedded in a larger string (e.g. tool-result JSON) used to
+        # get sliced mid-payload by truncation, producing invalid base64 the SDK
+        # logged "Incorrect padding" on for every LLM call. After scrubbing, no
+        # decodable data URI may survive anywhere in the output.
+        import base64
+        import importlib
+        import re
+
+        sys.modules.pop("plugins.observability.langfuse", None)
+        mod = importlib.import_module("plugins.observability.langfuse")
+
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 8000).decode()
+        embedded = '{"image_url":"data:image/png;base64,' + png + '","note":"' + "y" * 20000 + '"}'
+
+        out = mod._truncate_text(embedded, 12000)
+
+        assert isinstance(out, str)
+        assert "base64," not in out
+        assert re.findall(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+", out) == []
+
 
 class TestTraceScopeKey:
     def _fresh_plugin(self):
