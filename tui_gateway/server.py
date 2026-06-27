@@ -6373,6 +6373,12 @@ def _(rid, params: dict) -> dict:
         if not bool(pet_cfg.get("enabled")):
             return _ok(rid, {"enabled": False})
 
+        # render_mode is the terminal-render knob; 'off' means no TUI pet. The
+        # GUI floating canvas reads pet.info (which ignores render_mode), so this
+        # yields a GUI-only pet without a separate per-surface flag.
+        if str(pet_cfg.get("render_mode", "auto") or "auto").strip().lower() == "off":
+            return _ok(rid, {"enabled": False})
+
         pet = store.resolve_active_pet(str(pet_cfg.get("slug", "") or ""))
         if pet is None or not pet.exists:
             return _ok(rid, {"enabled": False})
