@@ -4545,6 +4545,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             scale = float(pet_cfg.get("scale", constants.DEFAULT_SCALE) or constants.DEFAULT_SCALE)
             cols = constants.resolve_cols(scale, pet_cfg.get("unicode_cols", 0))
 
+            # render_mode is the terminal-surface kill switch. `off` suppresses the
+            # pet in this CLI pane while leaving the desktop canvas (pet.info, which
+            # ignores render_mode) alive — i.e. the GUI-only configuration.
+            if str(pet_cfg.get("render_mode", "auto") or "auto").strip().lower() == "off":
+                enabled = False
+
             if not enabled:
                 with self._pet_lock:
                     self._pet_enabled = False
