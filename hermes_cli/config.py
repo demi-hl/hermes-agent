@@ -2911,6 +2911,18 @@ DEFAULT_CONFIG = {
         # the sweep on every CLI invocation).  Tracked via state_meta in
         # state.db itself, so it's shared across all processes.
         "min_interval_hours": 24,
+        # Secondary trigram FTS5 index over messages, used for CJK/substring
+        # ("contains") search recall on top of the base unicode61 word index.
+        # It is a full second copy of message text: on heavy databases it can
+        # exceed the messages table itself (e.g. ~540MB of a 1GB state.db) and
+        # doubles the FTS write cost per message, lengthening the write-lock
+        # hold time on the shared state.db (gateway + cron + desktop contend on
+        # one file). Keep it ON (default) for CJK/substring recall; set OFF to
+        # reclaim the space and halve FTS write work if you only search in
+        # word-tokenized scripts. Turning it OFF drops the trigram tables +
+        # triggers on the next state.db open and (with vacuum_after_prune) the
+        # freed pages are reclaimed; base word search is unaffected either way.
+        "fts_trigram": True,
         # Legacy per-session JSON snapshot writer.  When true, the agent
         # rewrites ``~/.hermes/sessions/session_{sid}.json`` on every turn
         # boundary with the full message list.  state.db is canonical and
