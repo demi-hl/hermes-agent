@@ -1398,6 +1398,30 @@ def run_conversation(
                             error_details.append("response is None")
                         else:
                             error_details.append("response.content invalid (not a non-empty list)")
+                    else:
+                        # Silent-downgrade guard: under capacity pressure Anthropic
+                        # can serve a different model than requested (e.g. fable-5
+                        # silently answered by opus-4.8). Refuse the downgraded
+                        # response so the normal fallback chain takes over instead
+                        # of invisibly burning usage on the wrong model.
+                        _served_model = str(getattr(response, "model", "") or "")
+                        _requested_model = str(agent.model or "").removesuffix("-latest")
+                        if (
+                            str(agent.provider or "").lower() == "anthropic"
+                            and _served_model
+                            and _requested_model
+                            and _requested_model not in _served_model
+                        ):
+                            response_invalid = True
+                            error_details.append(
+                                f"served-model mismatch: requested {_requested_model}, "
+                                f"provider served {_served_model} (silent fallback refused)"
+                            )
+                            logger.warning(
+                                "Refusing silently downgraded Anthropic response: "
+                                "requested=%s served=%s",
+                                _requested_model, _served_model,
+                            )
                 elif agent.api_mode == "bedrock_converse":
                     _btv = agent._get_transport()
                     if not _btv.validate_response(response):
