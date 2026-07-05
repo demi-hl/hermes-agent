@@ -3,6 +3,7 @@ import { normalize } from '@/lib/text'
 const SOURCE_LABELS: Record<string, string> = {
   api_server: 'API',
   bluebubbles: 'iMessage',
+  photon: 'iMessage',
   cli: 'CLI',
   codex: 'Codex',
   desktop: 'Desktop',
@@ -26,6 +27,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const SOURCE_ALIASES: Record<string, string[]> = {
   bluebubbles: ['apple messages', 'imessage'],
+  photon: ['apple messages', 'imessage', 'spectrum'],
   cli: ['terminal'],
   desktop: ['app', 'gui'],
   local: ['machine'],
@@ -55,6 +57,7 @@ export const MESSAGING_SESSION_SOURCE_IDS = [
   'signal',
   'whatsapp',
   'bluebubbles',
+  'photon',
   'homeassistant',
   'email',
   'sms',

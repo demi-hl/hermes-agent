@@ -74,6 +74,8 @@ const SOURCE_CONFIG: Record<string, { icon: typeof Terminal; color: string }> =
     discord: { icon: Hash, color: "text-[oklch(0.65_0.15_280)]" },
     slack: { icon: MessageSquare, color: "text-[oklch(0.7_0.15_155)]" },
     whatsapp: { icon: Globe, color: "text-success" },
+    photon: { icon: MessageSquare, color: "text-[oklch(0.65_0.15_250)]" },
+    bluebubbles: { icon: MessageSquare, color: "text-[oklch(0.6_0.18_250)]" },
     cron: { icon: Clock, color: "text-warning" },
   };
 
