@@ -35,14 +35,14 @@ export function createRendererLoopPauseController(onChange: () => void, { pauseW
   })
 
   document.addEventListener('visibilitychange', onVisibilityChange)
-  window.addEventListener('blur', onBlur)
-  window.addEventListener('focus', onFocus)
+  globalThis.addEventListener('blur', onBlur)
+  globalThis.addEventListener('focus', onFocus)
 
   return {
     dispose: () => {
       document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('blur', onBlur)
-      window.removeEventListener('focus', onFocus)
+      globalThis.removeEventListener('blur', onBlur)
+      globalThis.removeEventListener('focus', onFocus)
       offWindowState?.()
     },
     isPaused: () => document.visibilityState === 'hidden' || (pauseWhenUnfocused && !windowFocused) || windowPaused
