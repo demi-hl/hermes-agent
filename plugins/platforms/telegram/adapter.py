@@ -6446,6 +6446,22 @@ class TelegramAdapter(BasePlatformAdapter):
                 await self._handle_choice_picker_callback(query, data, chat_id)
             return
 
+        # --- RH trade/NFT callbacks (rb:...) ---
+        # Alert jobs can paint these buttons without going through the gateway,
+        # so the adapter must explicitly bridge them into the active profile's
+        # hardened two-tap dispatcher. Without this branch Telegram accepts the
+        # callback but silently drops it at the end of this method.
+        if data.startswith("rb:"):
+            await self._handle_rh_trade_callback(
+                query,
+                data,
+                query_chat_id=query_chat_id,
+                query_chat_type=query_chat_type,
+                query_thread_id=query_thread_id,
+                query_user_name=query_user_name,
+            )
+            return
+
         # --- Gmail-triage callbacks (gt:verb:arg) ---
         if data.startswith("gt:"):
             await self._handle_gmail_triage_callback(
@@ -6796,6 +6812,83 @@ class TelegramAdapter(BasePlatformAdapter):
                         answer, getattr(query.from_user, "id", "unknown"))
         except Exception as exc:
             logger.error("Failed to write update response from callback: %s", exc)
+
+    def _rh_callback_script_path(self) -> _Path:
+        """Return the active profile's RH callback dispatcher path."""
+        from hermes_constants import get_hermes_home
+
+        return get_hermes_home() / "scripts" / "rh_tg_callback.py"
+
+    async def _handle_rh_trade_callback(
+        self,
+        query,
+        data: str,
+        *,
+        query_chat_id,
+        query_chat_type,
+        query_thread_id,
+        query_user_name,
+    ) -> None:
+        """Dispatch an owner-gated ``rb:*`` callback to the profile helper."""
+        caller_id = str(getattr(query.from_user, "id", ""))
+        if not self._is_callback_user_authorized(
+            caller_id,
+            chat_id=query_chat_id,
+            chat_type=str(query_chat_type) if query_chat_type is not None else None,
+            thread_id=str(query_thread_id) if query_thread_id is not None else None,
+            user_name=query_user_name,
+        ):
+            await query.answer(text="⛔ You are not authorized to use trade controls.")
+            return
+
+        script_path = self._rh_callback_script_path()
+        if not script_path.is_file():
+            await query.answer(text="❌ RH trade dispatcher unavailable")
+            logger.error("[%s] RH callback dispatcher missing: %s", self.name, script_path)
+            return
+
+        chat_id = str(query_chat_id or "")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(script_path),
+                data,
+                chat_id,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=210,
+            )
+            stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
+            stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+            label = (stdout_text.splitlines()[-1] if stdout_text else "").strip()
+            if not label:
+                label = f"❌ RH callback failed (exit {proc.returncode})"
+            # Telegram limits answerCallbackQuery text to 200 characters.
+            await query.answer(text=label[:190])
+            if proc.returncode != 0:
+                logger.error(
+                    "[%s] RH callback failed: data=%s rc=%s stderr=%s",
+                    self.name,
+                    data[:64],
+                    proc.returncode,
+                    stderr_text[:500],
+                )
+            else:
+                logger.info("[%s] RH callback ok: data=%s", self.name, data[:64])
+        except asyncio.TimeoutError:
+            await query.answer(text="❌ RH callback timed out")
+            logger.error("[%s] RH callback timed out: data=%s", self.name, data[:64])
+        except Exception as exc:
+            await query.answer(text="❌ RH callback error")
+            logger.error(
+                "[%s] RH callback exception: data=%s err=%s",
+                self.name,
+                data[:64],
+                exc,
+                exc_info=True,
+            )
 
     # Maps `gt:<verb>` -> (script-name, extra-args, success-label, is_state).
     # Scripts live in ~/.hermes/scripts/gmail-triage/. `arg` from the callback
