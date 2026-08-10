@@ -6190,6 +6190,12 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
       return
     }
 
+    win.webContents.setWindowOpenHandler(details => {
+      openExternalUrl(details.url)
+
+      return { action: 'deny' }
+    })
+
     // Re-check the cookie jar on every successful navigation (the callback
     // redirect is the moment cookies get set) plus a low-frequency poll as a
     // belt-and-braces fallback for IDPs that finish via in-page JS.
@@ -6685,6 +6691,12 @@ function openPortalLoginWindow() {
 
       return
     }
+
+    win.webContents.setWindowOpenHandler(details => {
+      openExternalUrl(details.url)
+
+      return { action: 'deny' }
+    })
 
     win.webContents.on('did-navigate', () => void checkCookie())
     win.webContents.on('did-redirect-navigation', () => void checkCookie())

@@ -39,6 +39,12 @@ export function createLinkTitleWindow(BrowserWindow, partitionSession) {
     // is best-effort and the window is destroyed within a few seconds anyway.
   }
 
+  try {
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  } catch {
+    // webContents may be unavailable in degraded/headless environments.
+  }
+
   return window
 }
 
